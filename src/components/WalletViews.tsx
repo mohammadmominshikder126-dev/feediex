@@ -2,16 +2,16 @@ import React, { useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
-  Check,
+  ArrowRight,
   CheckCircle2,
   Clock,
-  Copy,
+  ShieldCheck,
   Wallet,
   XCircle,
 } from 'lucide-react';
 import { BRAND_ASSETS } from '../lib/assets';
 import { METHOD_LABELS, formatBDT } from '../lib/defaults';
-import { submitDeposit, submitWithdrawal } from '../lib/storeService';
+import { submitWithdrawal } from '../lib/storeService';
 import type {
   AppConfig,
   Deposit,
@@ -20,6 +20,7 @@ import type {
   TabKey,
   Withdrawal,
 } from '../types';
+import { PaymentGatewayCheckout } from './PaymentGatewayCheckout';
 
 interface WalletViewsProps {
   mode: 'recharge' | 'withdraw';
@@ -50,43 +51,30 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
   const [amount, setAmount] = useState(
     mode === 'recharge' ? String(config.minDeposit) : String(config.minWithdraw)
   );
-  const [trxId, setTrxId] = useState('');
+  const [gatewayOpen, setGatewayOpen] = useState(false);
   const [withdrawPass, setWithdrawPass] = useState('');
-  const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  const activeTargetNumber = config.rechargeNumbers[method] || '01700000000';
-
-  const handleCopyNumber = async () => {
-    try {
-      await navigator.clipboard.writeText(activeTargetNumber);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
-    }
-  };
-
-  const handleDepositSubmit = async (e: React.FormEvent) => {
+  const handleOpenGateway = (e: React.FormEvent) => {
     e.preventDefault();
     setMsg(null);
-    setSubmitting(true);
-    try {
-      await submitDeposit(member.phone, Number(amount), method, trxId);
-      setTrxId('');
-      setMsg({
-        type: 'ok',
-        text: 'আপনার ডিপোজিট আবেদন জমা হয়েছে! এডমিন অনুমোদন করলে স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ হবে।',
-      });
-    } catch (err) {
+    if (config.depositsEnabled === false) {
       setMsg({
         type: 'err',
-        text: err instanceof Error ? err.message : 'ডিপোজিট জমা ব্যর্থ হয়েছে।',
+        text: 'এডমিন কর্তৃক ডিপোজিট সেবা সাময়িকভাবে বন্ধ রাখা হয়েছে।',
       });
-    } finally {
-      setSubmitting(false);
+      return;
     }
+    const numAmount = Number(amount);
+    if (!Number.isFinite(numAmount) || numAmount < config.minDeposit) {
+      setMsg({
+        type: 'err',
+        text: `সর্বনিম্ন ডিপোজিটের পরিমাণ ${formatBDT(config.minDeposit)}।`,
+      });
+      return;
+    }
+    setGatewayOpen(true);
   };
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
@@ -110,6 +98,19 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
     }
   };
 
+  if (mode === 'recharge' && gatewayOpen) {
+    return (
+      <PaymentGatewayCheckout
+        initialMethod={method}
+        amount={Number(amount)}
+        config={config}
+        member={member}
+        onBack={() => setGatewayOpen(false)}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* Subpage Header with Feedex Logo */}
@@ -118,7 +119,7 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('home')}
-            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
+            className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
             aria-label="ফিরে যান"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -132,7 +133,7 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
           <div>
             <h1 className="font-bold text-base text-slate-900">
               {mode === 'recharge'
-                ? 'ডিপোজিট / রিচার্জ (বিকাশ, নগদ, রকেট)'
+                ? 'ডিপোজিট / রিচার্জ (FeedexPay গেটওয়ে)'
                 : 'টাকা উত্তোলন'}
             </h1>
             <p className="text-xs text-slate-500">
@@ -160,7 +161,7 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
       {mode === 'recharge' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           <form
-            onSubmit={handleDepositSubmit}
+            onSubmit={handleOpenGateway}
             className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 space-y-5 shadow-sm"
           >
             {config.depositsEnabled === false && (
@@ -168,9 +169,10 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
                 এডমিন কর্তৃক ডিপোজিট সেবা সাময়িকভাবে বন্ধ রাখা হয়েছে।
               </div>
             )}
+
             <div>
               <p className="text-sm font-bold text-slate-800 mb-2.5">
-                ১. পেমেন্ট মাধ্যম নির্বাচন করুন (সেন্ড মানি নম্বরসহ)
+                ১. পেমেন্ট গেটওয়ে চ্যানেল নির্বাচন করুন
               </p>
               <div className="grid grid-cols-3 gap-2.5">
                 {(['bkash', 'nagad', 'rocket'] as PaymentMethod[]).map((m) => (
@@ -178,65 +180,25 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
                     key={m}
                     type="button"
                     onClick={() => setMethod(m)}
-                    className={`min-h-[60px] px-2 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                    className={`min-h-[52px] px-2 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center ${
                       method === m
                         ? m === 'bkash'
-                          ? 'bg-pink-600 text-white border-pink-600 shadow-sm'
+                          ? 'bg-[#E2136E] text-white border-[#E2136E] shadow-sm'
                           : m === 'nagad'
-                          ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
-                          : 'bg-purple-800 text-white border-purple-800 shadow-sm'
+                          ? 'bg-[#F05A22] text-white border-[#F05A22] shadow-sm'
+                          : 'bg-[#8C3494] text-white border-[#8C3494] shadow-sm'
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     <span>{METHOD_LABELS[m]}</span>
-                    <span
-                      className={`text-[11px] font-mono-num ${
-                        method === m ? 'text-white/90' : 'text-slate-500'
-                      }`}
-                    >
-                      {config.rechargeNumbers[m]}
-                    </span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Live Admin-Synced Send Money Number Box */}
-            <div className="rounded-xl bg-purple-950 text-white p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-purple-200">
-                <span>অফিসিয়াল {METHOD_LABELS[method]} (সেন্ড মানি নম্বর)</span>
-                <span className="text-orange-300 font-semibold">লাইভ সিঙ্ক সক্রিয়</span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xl sm:text-2xl font-bold font-mono-num tracking-wider">
-                  {activeTargetNumber}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleCopyNumber}
-                  className="min-h-[40px] px-3.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4" /> কপি হয়েছে
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" /> কপি করুন
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-purple-200">
-                উপরের নম্বরে আপনার {METHOD_LABELS[method]} অ্যাপ থেকে{' '}
-                <strong className="text-white">Send Money (সেন্ড মানি)</strong> করে
-                নিচে পরিমাণ ও ট্রানজেকশন আইডি (TrxID) লিখুন।
-              </p>
-            </div>
-
             <div>
               <p className="text-sm font-bold text-slate-800 mb-2">
-                ২. টাকার পরিমাণ নির্বাচন করুন (সর্বনিম্ন {formatBDT(config.minDeposit)})
+                ২. রিচার্জের পরিমাণ নির্বাচন করুন (সর্বনিম্ন {formatBDT(config.minDeposit)})
               </p>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {PRESET_AMOUNTS.map((val) => (
@@ -244,7 +206,7 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
                     key={val}
                     type="button"
                     onClick={() => setAmount(String(val))}
-                    className={`min-h-[42px] rounded-xl border text-xs font-bold font-mono-num transition-colors cursor-pointer ${
+                    className={`min-h-[44px] rounded-xl border text-xs font-bold font-mono-num transition-colors cursor-pointer ${
                       Number(amount) === val
                         ? 'bg-purple-900 text-white border-purple-900'
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -265,26 +227,22 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-800 mb-1.5">
-                ৩. ট্রানজেকশন আইডি (Transaction ID / TrxID)
-              </label>
-              <input
-                type="text"
-                required
-                value={trxId}
-                onChange={(e) => setTrxId(e.target.value)}
-                placeholder="যেমন: BKA89X72LM"
-                className="w-full min-h-[48px] px-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-purple-700 focus:outline-none text-sm font-mono-num uppercase"
-              />
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3.5 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-slate-700">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  নিরাপদ পেমেন্ট গেটওয়ে · বিকাশ, নগদ ও রকেট সক্রিয়
+                </span>
+              </div>
             </div>
 
             <button
               type="submit"
-              disabled={submitting || config.depositsEnabled === false}
-              className="w-full min-h-[48px] rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm transition-colors disabled:opacity-60 cursor-pointer"
+              disabled={config.depositsEnabled === false}
+              className="w-full min-h-[50px] rounded-xl bg-purple-950 hover:bg-purple-900 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-60 cursor-pointer shadow-sm"
             >
-              {submitting ? 'জমা হচ্ছে...' : 'ডিপোজিট সাবমিট করুন'}
+              <span>পেমেন্ট গেটওয়েতে প্রবেশ করুন ({formatBDT(Number(amount || 0))})</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
           </form>
 
