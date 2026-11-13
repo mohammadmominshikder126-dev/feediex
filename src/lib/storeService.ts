@@ -93,61 +93,31 @@ export function ensureCloudInitialized(): Promise<void> {
       console.warn('Config seed skipped or failed:', err);
     }
 
-    // 2. Seed admin_credentials/main if missing
+    // 2. Seed admin_credentials/main with username, password, and security PIN if missing
     const adminRef = doc(db, 'admin_credentials', 'main');
     try {
       const adminSnap = await getDoc(adminRef);
       if (!adminSnap.exists()) {
         const passHash = await hashSecret('Admin@7860');
+        const pinHash = await hashSecret('786090');
         await setDoc(adminRef, {
           username: 'feedexadmin',
           passHash,
+          pinHash,
           updatedAt: new Date().toISOString(),
         });
+      } else {
+        const existingCred = adminSnap.data() as { username: string; passHash: string; pinHash?: string };
+        if (!existingCred.pinHash) {
+          const pinHash = await hashSecret('786090');
+          await updateDoc(adminRef, {
+            pinHash,
+            updatedAt: new Date().toISOString(),
+          });
+        }
       }
     } catch (err) {
       console.warn('Admin cred seed skipped or failed:', err);
-    }
-
-    // 3. Seed demo member 01712345678 if missing
-    const demoRef = doc(db, 'members', '01712345678');
-    try {
-      const demoSnap = await getDoc(demoRef);
-      if (!demoSnap.exists()) {
-        const demoPassHash = await hashSecret('123456');
-        const demoMember: Member = {
-          id: '041731786',
-          phone: '01712345678',
-          passwordHash: demoPassHash,
-          withdrawPasswordHash: demoPassHash,
-          balance: 500,
-          totalRecharge: 300,
-          totalWithdraw: 0,
-          totalEarned: 200,
-          referralCode: 'FDX731786',
-          referredBy: '',
-          uplinePhones: [],
-          walletMethod: 'bkash',
-          walletNumber: '01712345678',
-          blocked: false,
-          telegramBonusClaimed: false,
-          lastSpinAt: '',
-          createdAt: '2026-11-01T10:00:00.000Z',
-        };
-        await setDoc(demoRef, demoMember);
-        const demoTx: Transaction = {
-          id: 'tx_demo_signup',
-          memberId: demoMember.id,
-          memberPhone: demoMember.phone,
-          type: 'signup_bonus',
-          amount: 150,
-          description: 'নতুন অ্যাকাউন্ট নিবন্ধন বোনাস',
-          createdAt: '2026-11-01T10:00:00.000Z',
-        };
-        await setDoc(doc(db, 'transactions', demoTx.id), demoTx);
-      }
-    } catch (err) {
-      console.warn('Demo member seed skipped or failed:', err);
     }
 
     // 4. Seed live_payments if empty
@@ -172,7 +142,7 @@ export function subscribeAppConfig(onData: (cfg: AppConfig) => void): Unsubscrib
     ref,
     (snap) => {
       if (snap.exists()) {
-        onData(snap.data() as AppConfig);
+        onData({ ...DEFAULT_APP_CONFIG, ...(snap.data() as Partial<AppConfig>) });
       } else {
         onData(DEFAULT_APP_CONFIG);
       }
@@ -294,14 +264,20 @@ export async function registerMember(
     throw new Error('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।');
   }
 
+  const cfgSnap = await getDoc(doc(db, 'app_config', 'public'));
+  const cfg = cfgSnap.exists()
+    ? { ...DEFAULT_APP_CONFIG, ...(cfgSnap.data() as Partial<AppConfig>) }
+    : DEFAULT_APP_CONFIG;
+
+  if (cfg.registrationsEnabled === false) {
+    throw new Error('নতুন অ্যাকাউন্ট নিবন্ধন সাময়িকভাবে বন্ধ রয়েছে।');
+  }
+
   const memberRef = doc(db, 'members', phone);
   const existing = await getDoc(memberRef);
   if (existing.exists()) {
     throw new Error('এই মোবাইল নম্বর দিয়ে আগেই অ্যাকাউন্ট খোলা হয়েছে।');
   }
-
-  const cfgSnap = await getDoc(doc(db, 'app_config', 'public'));
-  const cfg = cfgSnap.exists() ? (cfgSnap.data() as AppConfig) : DEFAULT_APP_CONFIG;
 
   let uplinePhones: string[] = [];
   const trimmedRef = referralCodeInput.trim().toUpperCase();
@@ -388,7 +364,13 @@ export async function submitDeposit(
   trxId: string
 ): Promise<void> {
   const cfgSnap = await getDoc(doc(db, 'app_config', 'public'));
-  const cfg = cfgSnap.exists() ? (cfgSnap.data() as AppConfig) : DEFAULT_APP_CONFIG;
+  const cfg = cfgSnap.exists()
+    ? { ...DEFAULT_APP_CONFIG, ...(cfgSnap.data() as Partial<AppConfig>) }
+    : DEFAULT_APP_CONFIG;
+
+  if (cfg.depositsEnabled === false) {
+    throw new Error('ডিপোজিট কার্যক্রম সাময়িকভাবে বন্ধ রয়েছে।');
+  }
 
   if (amount < cfg.minDeposit) {
     throw new Error(`সর্বনিম্ন ডিপোজিট পরিমাণ ৳ ${cfg.minDeposit}।`);
@@ -433,7 +415,9 @@ export async function submitDeposit(
 
 export async function buyPlan(phone: string, planId: string): Promise<void> {
   const cfgSnap = await getDoc(doc(db, 'app_config', 'public'));
-  const cfg = cfgSnap.exists() ? (cfgSnap.data() as AppConfig) : DEFAULT_APP_CONFIG;
+  const cfg = cfgSnap.exists()
+    ? { ...DEFAULT_APP_CONFIG, ...(cfgSnap.data() as Partial<AppConfig>) }
+    : DEFAULT_APP_CONFIG;
   const plan = cfg.plans.find((p) => p.id === planId);
   if (!plan) throw new Error('প্ল্যান খুঁজে পাওয়া যায়নি।');
 
@@ -443,10 +427,10 @@ export async function buyPlan(phone: string, planId: string): Promise<void> {
       const mSnap = await tx.get(mRef);
       if (!mSnap.exists()) throw new Error('অ্যাকাউন্ট পাওয়া যায়নি।');
       const m = mSnap.data() as Member;
-      if (m.blocked) throw new Error('আপনার অ্যাকাউন্ট স্থগিত আছে।');
+      if (m.blocked) throw new Error('আপনার অ্যাকাউন্ট লক করা আছে।');
 
-      // Mandatory Deposit Gate
-      if (m.totalRecharge <= 0) {
+      // Mandatory Deposit Gate (controlled by Admin)
+      if (cfg.requireDepositForPlan !== false && m.totalRecharge <= 0) {
         throw new Error(
           'ডিপোজিট ছাড়া কোনো প্ল্যান কেনা যাবে না। অনুগ্রহ করে প্রথমে বিকাশ, নগদ বা রকেট দিয়ে ডিপোজিট করুন।'
         );
@@ -660,7 +644,13 @@ export async function submitWithdrawal(
   withdrawPassword: string
 ): Promise<void> {
   const cfgSnap = await getDoc(doc(db, 'app_config', 'public'));
-  const cfg = cfgSnap.exists() ? (cfgSnap.data() as AppConfig) : DEFAULT_APP_CONFIG;
+  const cfg = cfgSnap.exists()
+    ? { ...DEFAULT_APP_CONFIG, ...(cfgSnap.data() as Partial<AppConfig>) }
+    : DEFAULT_APP_CONFIG;
+
+  if (cfg.withdrawalsEnabled === false) {
+    throw new Error('উত্তোলন কার্যক্রম সাময়িকভাবে বন্ধ রয়েছে।');
+  }
 
   const passHash = await hashSecret(withdrawPassword.trim());
 
@@ -669,10 +659,10 @@ export async function submitWithdrawal(
     const mSnap = await tx.get(mRef);
     if (!mSnap.exists()) throw new Error('অ্যাকাউন্ট পাওয়া যায়নি।');
     const m = mSnap.data() as Member;
-    if (m.blocked) throw new Error('আপনার অ্যাকাউন্ট স্থগিত আছে।');
+    if (m.blocked) throw new Error('আপনার অ্যাকাউন্ট লক করা আছে।');
 
-    // Mandatory Deposit Gate
-    if (m.totalRecharge <= 0) {
+    // Mandatory Deposit Gate (controlled by Admin)
+    if (cfg.requireDepositForWithdraw !== false && m.totalRecharge <= 0) {
       throw new Error(
         'ডিপোজিট ছাড়া উত্তোলন করা যাবে না। অনুগ্রহ করে প্রথমে বিকাশ, নগদ বা রকেট দিয়ে ডিপোজিট করুন।'
       );
@@ -761,19 +751,32 @@ export async function fetchTeamHierarchy(phone: string): Promise<TeamHierarchyDa
 
 // ==================== ADMIN REAL-TIME & ACTIONS ====================
 
-export async function verifyAdminLogin(username: string, password: string): Promise<boolean> {
+export async function verifyAdminLogin(
+  username: string,
+  password: string,
+  securityPin: string
+): Promise<boolean> {
   await ensureCloudInitialized();
   const snap = await getDoc(doc(db, 'admin_credentials', 'main'));
   if (!snap.exists()) return false;
-  const creds = snap.data() as { username: string; passHash: string };
+  const creds = snap.data() as {
+    username: string;
+    passHash: string;
+    pinHash?: string;
+  };
   const passHash = await hashSecret(password);
-  return creds.username === username.trim() && creds.passHash === passHash;
+  const pinHash = await hashSecret(securityPin.trim());
+  const validPin = creds.pinHash
+    ? creds.pinHash === pinHash
+    : securityPin.trim() === '786090';
+  return creds.username === username.trim() && creds.passHash === passHash && validPin;
 }
 
 export async function updateAdminCredentials(
   currentPassword: string,
   newUsername: string,
-  newPassword: string
+  newPassword: string,
+  newPin: string
 ): Promise<void> {
   const ref = doc(db, 'admin_credentials', 'main');
   const snap = await getDoc(ref);
@@ -783,12 +786,15 @@ export async function updateAdminCredentials(
   if (creds.passHash !== curHash) {
     throw new Error('বর্তমান এডমিন পাসওয়ার্ড সঠিক নয়।');
   }
-  if (newUsername.trim().length < 4 || newPassword.length < 6) {
-    throw new Error('ইউজারনেম কমপক্ষে ৪ অক্ষর ও নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।');
+  if (newUsername.trim().length < 4 || newPassword.length < 6 || newPin.trim().length < 4) {
+    throw new Error(
+      'ইউজারনেম কমপক্ষে ৪ অক্ষর, নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষর এবং সিকিউরিটি পিন কমপক্ষে ৪ সংখ্যার হতে হবে।'
+    );
   }
   await setDoc(ref, {
     username: newUsername.trim(),
     passHash: await hashSecret(newPassword),
+    pinHash: await hashSecret(newPin.trim()),
     updatedAt: new Date().toISOString(),
   });
 }
@@ -818,6 +824,137 @@ export function subscribeAllWithdrawals(onData: (items: Withdrawal[]) => void): 
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     onData(items);
   });
+}
+
+export function subscribeAllInvestments(onData: (items: Investment[]) => void): Unsubscribe {
+  return onSnapshot(collection(db, 'investments'), (snap) => {
+    const items = snap.docs
+      .map((d) => d.data() as Investment)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    onData(items);
+  });
+}
+
+export function subscribeAllTransactions(onData: (items: Transaction[]) => void): Unsubscribe {
+  return onSnapshot(collection(db, 'transactions'), (snap) => {
+    const items = snap.docs
+      .map((d) => d.data() as Transaction)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    onData(items);
+  });
+}
+
+export async function adminUpdateMemberDetails(
+  phone: string,
+  payload: {
+    balance?: number;
+    totalRecharge?: number;
+    totalWithdraw?: number;
+    totalEarned?: number;
+    walletMethod?: '' | PaymentMethod;
+    walletNumber?: string;
+    blocked?: boolean;
+    newLoginPassword?: string;
+    newWithdrawPassword?: string;
+  }
+): Promise<void> {
+  const mRef = doc(db, 'members', phone);
+  const mSnap = await getDoc(mRef);
+  if (!mSnap.exists()) throw new Error('সদস্য পাওয়া যায়নি।');
+  const m = mSnap.data() as Member;
+
+  const updates: Partial<Member> = {};
+  if (typeof payload.balance === 'number' && !Number.isNaN(payload.balance)) {
+    updates.balance = Math.max(0, Number(payload.balance.toFixed(2)));
+  }
+  if (typeof payload.totalRecharge === 'number' && !Number.isNaN(payload.totalRecharge)) {
+    updates.totalRecharge = Math.max(0, Number(payload.totalRecharge.toFixed(2)));
+  }
+  if (typeof payload.totalWithdraw === 'number' && !Number.isNaN(payload.totalWithdraw)) {
+    updates.totalWithdraw = Math.max(0, Number(payload.totalWithdraw.toFixed(2)));
+  }
+  if (typeof payload.totalEarned === 'number' && !Number.isNaN(payload.totalEarned)) {
+    updates.totalEarned = Math.max(0, Number(payload.totalEarned.toFixed(2)));
+  }
+  if (payload.walletMethod !== undefined) {
+    updates.walletMethod = payload.walletMethod;
+  }
+  if (payload.walletNumber !== undefined) {
+    updates.walletNumber = payload.walletNumber.trim();
+  }
+  if (typeof payload.blocked === 'boolean') {
+    updates.blocked = payload.blocked;
+  }
+  if (payload.newLoginPassword && payload.newLoginPassword.trim().length >= 6) {
+    updates.passwordHash = await hashSecret(payload.newLoginPassword.trim());
+  }
+  if (payload.newWithdrawPassword && payload.newWithdrawPassword.trim().length >= 4) {
+    updates.withdrawPasswordHash = await hashSecret(payload.newWithdrawPassword.trim());
+  }
+
+  await updateDoc(mRef, updates);
+
+  if (typeof payload.balance === 'number' && payload.balance !== m.balance) {
+    const diff = Number((payload.balance - m.balance).toFixed(2));
+    const tx: Transaction = {
+      id: makeId('tx'),
+      memberId: m.id,
+      memberPhone: m.phone,
+      type: 'admin_adjust',
+      amount: diff,
+      description: 'এডমিন কর্তৃক অ্যাকাউন্ট ব্যালেন্স আপডেট',
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, 'transactions', tx.id), tx);
+  }
+}
+
+export async function adminAssignPlanToMember(phone: string, planId: string): Promise<void> {
+  const cfgSnap = await getDoc(doc(db, 'app_config', 'public'));
+  const cfg = cfgSnap.exists()
+    ? { ...DEFAULT_APP_CONFIG, ...(cfgSnap.data() as Partial<AppConfig>) }
+    : DEFAULT_APP_CONFIG;
+  const plan = cfg.plans.find((p) => p.id === planId);
+  if (!plan) throw new Error('প্ল্যান পাওয়া যায়নি।');
+
+  const mSnap = await getDoc(doc(db, 'members', phone));
+  if (!mSnap.exists()) throw new Error('সদস্য পাওয়া যায়নি।');
+  const m = mSnap.data() as Member;
+  const now = new Date().toISOString();
+
+  const inv: Investment = {
+    id: makeId('inv'),
+    memberId: m.id,
+    memberPhone: m.phone,
+    planId: plan.id,
+    planName: plan.name,
+    price: plan.price,
+    dailyIncome: plan.dailyIncome,
+    cycleDays: plan.cycleDays,
+    daysClaimed: 0,
+    lastClaimedAt: '',
+    status: 'active',
+    createdAt: now,
+  };
+  await setDoc(doc(db, 'investments', inv.id), inv);
+
+  const tx: Transaction = {
+    id: makeId('tx'),
+    memberId: m.id,
+    memberPhone: m.phone,
+    type: 'admin_adjust',
+    amount: 0,
+    description: `এডমিন কর্তৃক ${plan.name} সক্রিয় করা হয়েছে`,
+    createdAt: now,
+  };
+  await setDoc(doc(db, 'transactions', tx.id), tx);
+}
+
+export async function adminSetInvestmentStatus(
+  investmentId: string,
+  status: 'active' | 'completed'
+): Promise<void> {
+  await updateDoc(doc(db, 'investments', investmentId), { status });
 }
 
 export async function adminSaveAppConfig(nextConfig: AppConfig): Promise<void> {

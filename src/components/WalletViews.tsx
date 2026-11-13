@@ -163,6 +163,11 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
             onSubmit={handleDepositSubmit}
             className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 space-y-5 shadow-sm"
           >
+            {config.depositsEnabled === false && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">
+                এডমিন কর্তৃক ডিপোজিট সেবা সাময়িকভাবে বন্ধ রাখা হয়েছে।
+              </div>
+            )}
             <div>
               <p className="text-sm font-bold text-slate-800 mb-2.5">
                 ১. পেমেন্ট মাধ্যম নির্বাচন করুন (সেন্ড মানি নম্বরসহ)
@@ -276,7 +281,7 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || config.depositsEnabled === false}
               className="w-full min-h-[48px] rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm transition-colors disabled:opacity-60 cursor-pointer"
             >
               {submitting ? 'জমা হচ্ছে...' : 'ডিপোজিট সাবমিট করুন'}
@@ -340,7 +345,12 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-sm">
-            {member.totalRecharge <= 0 && (
+            {config.withdrawalsEnabled === false && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">
+                এডমিন কর্তৃক উত্তোলন সেবা সাময়িকভাবে বন্ধ রাখা হয়েছে।
+              </div>
+            )}
+            {config.requireDepositForWithdraw !== false && member.totalRecharge <= 0 && (
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm flex items-start gap-2.5">
                 <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
                 <div>
@@ -425,7 +435,11 @@ export const WalletViews: React.FC<WalletViewsProps> = ({
 
                 <button
                   type="submit"
-                  disabled={submitting || member.totalRecharge <= 0}
+                  disabled={
+                    submitting ||
+                    config.withdrawalsEnabled === false ||
+                    (config.requireDepositForWithdraw !== false && member.totalRecharge <= 0)
+                  }
                   className="w-full min-h-[48px] rounded-xl bg-purple-900 hover:bg-purple-800 text-white font-bold text-sm disabled:opacity-50 cursor-pointer"
                 >
                   {submitting ? 'প্রক্রিয়াধীন...' : 'উত্তোলন আবেদন করুন'}

@@ -31,7 +31,10 @@ service cloud.firestore {
         'signupBonus', 'telegramBonus', 'minDeposit', 'minWithdraw', 'plans', 'updatedAt'
       ]) && data.keys().hasOnly([
         'rechargeNumbers', 'telegramLink', 'supportLink', 'referralRates',
-        'signupBonus', 'telegramBonus', 'minDeposit', 'minWithdraw', 'plans', 'updatedAt'
+        'signupBonus', 'telegramBonus', 'minDeposit', 'minWithdraw',
+        'globalNotice', 'depositsEnabled', 'withdrawalsEnabled',
+        'registrationsEnabled', 'luckySpinEnabled', 'requireDepositForPlan',
+        'requireDepositForWithdraw', 'maintenanceMode', 'plans', 'updatedAt'
       ])
       && data.rechargeNumbers is map
       && data.rechargeNumbers.keys().hasAll(['bkash', 'nagad', 'rocket'])
@@ -51,15 +54,24 @@ service cloud.firestore {
       && data.telegramBonus is number && data.telegramBonus >= 0 && data.telegramBonus <= 100000
       && data.minDeposit is number && data.minDeposit >= 1 && data.minDeposit <= 1000000
       && data.minWithdraw is number && data.minWithdraw >= 1 && data.minWithdraw <= 1000000
+      && (!('globalNotice' in data) || isValidStr(data.globalNotice, 400))
+      && (!('depositsEnabled' in data) || data.depositsEnabled is bool)
+      && (!('withdrawalsEnabled' in data) || data.withdrawalsEnabled is bool)
+      && (!('registrationsEnabled' in data) || data.registrationsEnabled is bool)
+      && (!('luckySpinEnabled' in data) || data.luckySpinEnabled is bool)
+      && (!('requireDepositForPlan' in data) || data.requireDepositForPlan is bool)
+      && (!('requireDepositForWithdraw' in data) || data.requireDepositForWithdraw is bool)
+      && (!('maintenanceMode' in data) || data.maintenanceMode is bool)
       && data.plans is list && data.plans.size() >= 1 && data.plans.size() <= 30
       && isValidNonEmptyStr(data.updatedAt, 64);
     }
 
     function isValidAdminCred(data) {
       return data.keys().hasAll(['username', 'passHash', 'updatedAt'])
-        && data.keys().hasOnly(['username', 'passHash', 'updatedAt'])
+        && data.keys().hasOnly(['username', 'passHash', 'pinHash', 'updatedAt'])
         && isValidNonEmptyStr(data.username, 64)
         && isValidNonEmptyStr(data.passHash, 128)
+        && (!('pinHash' in data) || isValidNonEmptyStr(data.pinHash, 128))
         && isValidNonEmptyStr(data.updatedAt, 64);
     }
 

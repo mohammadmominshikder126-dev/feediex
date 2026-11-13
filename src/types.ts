@@ -42,6 +42,14 @@ export interface AppConfig {
   telegramBonus: number;
   minDeposit: number;
   minWithdraw: number;
+  globalNotice: string;
+  depositsEnabled: boolean;
+  withdrawalsEnabled: boolean;
+  registrationsEnabled: boolean;
+  luckySpinEnabled: boolean;
+  requireDepositForPlan: boolean;
+  requireDepositForWithdraw: boolean;
+  maintenanceMode: boolean;
   plans: PlanItem[];
   updatedAt: string;
 }

@@ -5,7 +5,6 @@ import {
   Lock,
   Phone,
   Send,
-  ShieldCheck,
   UserPlus,
 } from 'lucide-react';
 import { BRAND_ASSETS } from '../lib/assets';
@@ -47,19 +46,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'অপারেশন ব্যর্থ হয়েছে।');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDemoLogin = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const m = await loginMember('01712345678', '123456');
-      onAuthenticated(m, false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'ডেমো লগইন ব্যর্থ হয়েছে।');
     } finally {
       setLoading(false);
     }
@@ -245,9 +231,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </div>
               )}
 
+              {mode === 'register' && config.registrationsEnabled === false && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+                  এডমিন কর্তৃক নতুন নিবন্ধন সাময়িকভাবে বন্ধ রাখা হয়েছে।
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (mode === 'register' && config.registrationsEnabled === false)}
                 className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-purple-900 to-purple-800 hover:from-purple-800 hover:to-purple-700 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-60 cursor-pointer"
               >
                 {loading
@@ -258,19 +250,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
-
-            {/* 1-Click Demo Login */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={handleDemoLogin}
-                className="w-full min-h-[44px] rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                <ShieldCheck className="w-4 h-4 text-purple-800" />
-                ডেমো অ্যাকাউন্ট দিয়ে প্রবেশ করুন (01712345678 / 123456)
-              </button>
-            </div>
           </div>
 
           {/* Direct Community & Support Links */}

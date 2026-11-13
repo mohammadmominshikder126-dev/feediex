@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   Download,
   Headphones,
   Home,
+  Lock,
   Send,
   Share2,
   User,
@@ -49,10 +51,10 @@ function checkIsAdminRoute(): boolean {
   const h = window.location.hash.toLowerCase();
   const params = new URLSearchParams(window.location.search);
   return (
-    p === '/admin' ||
-    p.endsWith('/admin') ||
-    h.startsWith('#/admin') ||
-    params.get('page') === 'admin'
+    p === '/fdx-ctrl-7860' ||
+    p.endsWith('/fdx-ctrl-7860') ||
+    h.startsWith('#/fdx-ctrl-7860') ||
+    params.get('portal') === 'fdx7860'
   );
 }
 
@@ -76,6 +78,7 @@ export default function App() {
     }
   });
   const [member, setMember] = useState<Member | null>(null);
+  const [lockedNotice, setLockedNotice] = useState<boolean>(false);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
@@ -83,7 +86,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [welcomeBanner, setWelcomeBanner] = useState<boolean>(false);
 
-  // Sync admin route on popstate/hashchange
+  // Sync secret admin route on popstate/hashchange
   useEffect(() => {
     const onRouteChange = () => setIsAdminRoute(checkIsAdminRoute());
     window.addEventListener('popstate', onRouteChange);
@@ -116,12 +119,20 @@ export default function App() {
       return;
     }
     const unsubM = subscribeMember(sessionPhone, (m) => {
-      if (!m || m.blocked) {
+      if (!m) {
         setMember(null);
         localStorage.removeItem('fdx_member_phone');
         setSessionPhone(null);
         return;
       }
+      if (m.blocked) {
+        setLockedNotice(true);
+        setMember(null);
+        localStorage.removeItem('fdx_member_phone');
+        setSessionPhone(null);
+        return;
+      }
+      setLockedNotice(false);
       setMember(m);
     });
     const unsubD = subscribeMemberDeposits(sessionPhone, setDeposits);
@@ -146,7 +157,79 @@ export default function App() {
     return <AdminPanelView config={config} onExitAdmin={handleExitAdmin} />;
   }
 
+  // Maintenance mode controlled by Admin in real time
+  if (config.maintenanceMode) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white text-slate-900 rounded-2xl p-6 text-center space-y-4 shadow-xl">
+          <img
+            src={BRAND_ASSETS.logo}
+            alt="FeedexDigital লোগো"
+            referrerPolicy="no-referrer"
+            className="w-14 h-14 rounded-2xl mx-auto border border-slate-200 object-cover"
+          />
+          <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h1 className="font-bold text-lg">সিস্টেম রক্ষণাবেক্ষণ চলছে</h1>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            {config.globalNotice?.trim() ||
+              'সার্ভার আপগ্রেডের কাজ চলছে। কিছুক্ষণ পর আবার চেষ্টা করুন অথবা সাপোর্ট সেন্টারে যোগাযোগ করুন।'}
+          </p>
+          <a
+            href={config.supportLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full min-h-[44px] rounded-xl bg-orange-600 text-white text-sm font-bold flex items-center justify-center gap-2"
+          >
+            <Headphones className="w-4 h-4" />
+            সাপোর্ট সেন্টার
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Instant lock notice if Admin locked this member's account
+  if (lockedNotice) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white text-slate-900 rounded-2xl p-6 text-center space-y-4 shadow-xl">
+          <div className="w-12 h-12 rounded-xl bg-red-100 text-red-700 mx-auto flex items-center justify-center">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h1 className="font-bold text-lg text-red-700">
+            আপনার অ্যাকাউন্ট লক করা হয়েছে
+          </h1>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            নিরাপত্তাজনিত কারণে এডমিন আপনার অ্যাকাউন্ট সাময়িকভাবে লক করেছেন।
+            অ্যাকাউন্ট সচল করতে অনুগ্রহ করে সাপোর্ট সেন্টারে যোগাযোগ করুন।
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setLockedNotice(false)}
+              className="min-h-[44px] rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+            >
+              লগইনে ফিরে যান
+            </button>
+            <a
+              href={config.supportLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-[44px] rounded-xl bg-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Headphones className="w-4 h-4" />
+              সাপোর্ট সেন্টার
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const handleAuthenticated = (loggedMember: Member, _isNew: boolean) => {
+    setLockedNotice(false);
     localStorage.setItem('fdx_member_phone', loggedMember.phone);
     setSessionPhone(loggedMember.phone);
     setMember(loggedMember);

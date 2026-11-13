@@ -127,6 +127,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   return (
     <div className="space-y-5">
+      {/* Live Admin Global Notice */}
+      {config.globalNotice && config.globalNotice.trim().length > 0 && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs sm:text-sm font-semibold">
+          {config.globalNotice}
+        </div>
+      )}
+
       {/* Feedback Banner */}
       {feedback && (
         <div
@@ -334,14 +341,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
               ? 'প্রক্রিয়াধীন...'
               : `যুক্ত হয়ে ৳ ${config.telegramBonus} নিন`}
           </button>
-          <button
-            type="button"
-            onClick={() => setShowWheel(true)}
-            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
-          >
-            <Gift className="w-4 h-4" />
-            লাকি স্পিন
-          </button>
+          {config.luckySpinEnabled !== false && (
+            <button
+              type="button"
+              onClick={() => setShowWheel(true)}
+              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
+            >
+              <Gift className="w-4 h-4" />
+              লাকি স্পিন
+            </button>
+          )}
         </div>
       </div>
 
